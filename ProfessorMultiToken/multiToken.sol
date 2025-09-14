@@ -7,14 +7,24 @@ import {ERC1155Pausable} from "@openzeppelin/contracts/token/ERC1155/extensions/
 import {ERC1155Supply} from "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/finance/PaymentSplitter.sol";
 
-contract Professor is ERC1155, Ownable, ERC1155Pausable, ERC1155Supply {
+contract Professor is ERC1155, Ownable, ERC1155Pausable, ERC1155Supply , PaymentSplitter {
     uint256 public publicPrice = 0.001 ether ;
+    uint256 public allowListPrice = 0.0005 ether ;
     uint256 public maxSupply = 10 ;
 
-    constructor(address initialOwner)
+    bool public publicMintOpen = false ;
+    bool public allowListMintOpen = false ;
+
+    mapping ( address => bool ) public allowList ;
+    mapping ( address => uint256 ) public mintCount ;
+
+    constructor(address initialOwner,address[] memory _payees,
+        uint256[] memory _shares)
         ERC1155("ipfs://Qmaa6TuP2s9pSKczHF4rwWhTKUdygrrDs8RmYYqCjP3Hye/")
         Ownable(initialOwner)
+        PaymentSplitter(_payees, _shares)
     {}
 
     function setURI(string memory newuri) public onlyOwner {
@@ -29,14 +39,39 @@ contract Professor is ERC1155, Ownable, ERC1155Pausable, ERC1155Supply {
         _unpause();
     }
 
-    function mint(uint256 id, uint256 amount)
+    function setMintWindows(bool _public , bool _allowList) external onlyOwner{
+        publicMintOpen = _public ;
+        allowListMintOpen = _allowList ;
+    }
+
+    function addAllowList(address[] memory _address)external onlyOwner{
+        for(uint i = 0 ; i < _address.length ; i++){
+            allowList[_address[i]] = true ;
+        }
+    }
+
+    function publicMint(uint256 id, uint256 amount)
         public
         payable 
-    {
+    {   
+        require(publicMintOpen , "public minting in close");
+        require(mintCount[msg.sender] + amount <= 5 , "You can not mint more than 5 NFTs");
         require(msg.value == publicPrice * amount  , "Not enough money sent !");
         require(id < 10 , "This NFT does not exist !");
         require(totalSupply(id) + amount <= maxSupply , "Sorry we are out of stock :( ");
         _mint(msg.sender, id, amount, "");
+        mintCount[msg.sender] += amount ;
+    }
+
+    function allowListMint(uint256 id , uint256 amount)public payable{
+        require(allowListMintOpen , "allow list minting in close");
+        require(mintCount[msg.sender] + amount <= 5 , "You can not mint more than 5 NFTs");
+        require(allowList[msg.sender] , "You are not in the allow list !");
+        require(msg.value == allowListPrice * amount  , "Not enough money sent !");
+        require(id < 10 , "This NFT does not exist !");
+        require(totalSupply(id) + amount <= maxSupply , "Sorry we are out of stock :( ");
+        _mint(msg.sender, id, amount, "");
+        mintCount[msg.sender] += amount ;
     }
 
     function withdraw(address _address) external onlyOwner{
